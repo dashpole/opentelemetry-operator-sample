@@ -16,6 +16,7 @@ apiVersion: opentelemetry.io/v1alpha1
 kind: OpenTelemetryCollector
 metadata:
   name: otel
+  namespace: beyla
 spec:
   image: otel/opentelemetry-collector-contrib:latest
   config: |
@@ -30,6 +31,35 @@ spec:
         detectors: [env, gcp]
         timeout: 2s
         override: false
+      groupbyattrs:
+        keys:
+          - net.host.name
+      resource:
+        attributes:
+          - key: k8s.pod.ip
+            from_attribute: net.host.name
+            action: insert
+      k8sattributes:
+        pod_association:
+          - sources:
+            - from: resource_attribute
+              name: k8s.pod.ip
+      filter:
+        traces:
+          span:
+            - resource.attributes["k8s.pod.name"] == nil
+        metrics:
+          metric:
+            - resource.attributes["k8s.pod.name"] == nil
+      resource/jobandinstance:
+        attributes:
+          - key: service.name
+            from_attribute: k8s.pod.name
+            action: upsert
+          - key: service.instance.id
+            from_attribute: k8s.pod.uid
+            action: upsert
+
 
     exporters:
       googlemanagedprometheus:
@@ -41,9 +71,37 @@ spec:
       pipelines:
         metrics:
           receivers: [otlp]
-          processors: [resourcedetection]
+          processors: [resourcedetection, groupbyattrs, resource, k8sattributes, filter, resource/jobandinstance]
           exporters: [logging, googlemanagedprometheus]
         traces:
           receivers: [otlp]
-          processors: [resourcedetection]
-          exporters: [logging, googlecloud]
+          processors: [resourcedetection, groupbyattrs, resource, k8sattributes, filter, resource/jobandinstance]
+          exporters: [logging]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["apps"]
+  resources: ["replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions"]
+  resources: ["replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+subjects:
+- kind: ServiceAccount
+  name: otel-collector
+  namespace: beyla
+roleRef:
+  kind: ClusterRole
+  name: otel-collector
+  apiGroup: rbac.authorization.k8s.io

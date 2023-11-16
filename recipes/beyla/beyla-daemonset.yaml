@@ -18,6 +18,7 @@ metadata:
   name: beyla-agent
   labels:
     app: beyla
+  namespace: beyla
 spec:
   selector:
     matchLabels:
@@ -39,11 +40,8 @@ spec:
               cpu: 10m
               memory: 60Mi
             limits:
-              memory: 100Mi
-          image: grafana/beyla:latest
-          ports:
-          - name: metrics
-            containerPort: 8080
+              memory: 200Mi
+          image: gcr.io/dashpole-gke-dev/beyla-custom:v0.1.0
           securityContext:
             runAsUser: 0
             privileged: true
@@ -57,4 +55,8 @@ spec:
             - name: SKIP_GO_SPECIFIC_TRACERS
               value: "true"
             - name: METRICS_REPORT_TARGET # This is high cardinality, but useful for showing the power of ebpf
+              value: "true"
+            - name: METRICS_REPORT_PEER # This is high cardinality, but useful for showing the power of ebpf
+              value: "true"
+            - name: BPF_PID_FILTER_OFF
               value: "true"
